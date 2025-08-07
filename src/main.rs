@@ -1,22 +1,28 @@
+use std::sync::mpsc;
+use std::thread;
+
 fn main() {
+    let (tx, rx) = mpsc::channel();
+
     let mut actor = Counter { count: 0 };
 
-    let mut mailbox = Vec::new();
+    thread::spawn(move || {
+        actor.run(rx);
+    });
 
-    mailbox.push(Message::Increment);
-    mailbox.push(Message::Increment);
-    mailbox.push(Message::GetCount);
+    tx.send(Message::Increment).unwrap();
+    tx.send(Message::Increment).unwrap();
 
-    for msg in mailbox {
-        if let Some(count) = actor.handle(msg) {
-            println!("Current count {}", count);
-        }
-    }
+    let (reply_tx, reply_rx) = mpsc::channel();
+    tx.send(Message::GetCount(reply_tx)).unwrap();
+
+    let count = reply_rx.recv().unwrap();
+    println!("Count {}", count);
 }
 
 enum Message {
     Increment,
-    GetCount,
+    GetCount(mpsc::Sender<u32>),
 }
 
 struct Counter {
@@ -24,14 +30,16 @@ struct Counter {
 }
 
 impl Counter {
-    fn handle(&mut self, msg: Message) -> Option<u32> {
-        match msg {
-            Message::Increment => {
-                self.count += 1;
-                None
+    fn run(&mut self, receiver: mpsc::Receiver<Message>) {
+        for msg in receiver {
+            match msg {
+                Message::Increment => {
+                    self.count += 1;
+                }
+                Message::GetCount(reply_to) => {
+                    let _ = reply_to.send(self.count);
+                }
             }
-
-            Message::GetCount => Some(self.count),
         }
     }
 }
