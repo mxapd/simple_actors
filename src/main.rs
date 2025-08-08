@@ -1,23 +1,30 @@
+use serde::Serialize;
 use std::sync::mpsc;
-use std::thread;
+use tokio::sync::oneshot;
 
-fn main() {
-    let (tx, rx) = mpsc::channel();
+#[tokio::main]
+async fn main() {
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
 
-    let mut actor = Counter { count: 0 };
+    let actor = PromptActor::new(rx);
+    tokio::spawn(actor.run());
 
-    thread::spawn(move || {
-        actor.run(rx);
-    });
+    let prompt = Prompt {
+        model: "gpt-oss:20b".to_string(),
+        prompt: "is it working?".to_string(),
+        stream: false,
+    };
 
-    tx.send(Message::Increment).unwrap();
-    tx.send(Message::Increment).unwrap();
+    let (reply_tx, reply_rx) = oneshot::channel();
+    tx.send(PromptMessage {
+        prompt,
+        reply: reply_tx,
+    })
+    .await
+    .unwrap();
 
-    let (reply_tx, reply_rx) = mpsc::channel();
-    tx.send(Message::GetCount(reply_tx)).unwrap();
-
-    let count = reply_rx.recv().unwrap();
-    println!("Count {}", count);
+    let result = reply_rx.await.unwrap();
+    println!("Response from actor: {}", result);
 }
 
 enum Message {
@@ -42,4 +49,40 @@ impl Counter {
             }
         }
     }
+}
+
+struct PromptActor {
+    receiver: tokio::sync::mpsc::Receiver<PromptMessage>,
+}
+
+impl PromptActor {
+    fn new(receiver: tokio::sync::mpsc::Receiver<PromptMessage>) -> Self {
+        Self { receiver }
+    }
+
+    async fn run(mut self) {
+        while let Some(msg) = self.receiver.recv().await {
+            let PromptMessage { prompt, reply } = msg;
+
+            let prompt_json = serde_json::to_string(&prompt).unwrap_or_default();
+
+            let result = super::send_post(prompt_json)
+                .await
+                .unwrap_or_else(|_| "Error".to_string());
+
+            let _ = reply.send(result);
+        }
+    }
+}
+
+struct PromptMessage {
+    prompt: Prompt,
+    reply: oneshot::Sender<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct Prompt {
+    model: String,
+    prompt: String,
+    stream: bool,
 }
