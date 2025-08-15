@@ -3,5 +3,5 @@ use tokio::sync::oneshot;
 
 pub struct PromptMessage {
     pub prompt: Prompt,
-    pub reply: oneshot::Sender<String>,
+    pub reply_addr: oneshot::Sender<String>,
 }
