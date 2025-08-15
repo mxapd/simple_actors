@@ -44,7 +44,4 @@ async fn main() {
         }
         Err(e) => eprintln!("Failed to receive response: {}", e),
     }
-
-    //println!("Response from actor: {}", result);
-    //println!("\n\nAI response: \n\n{}\n", value["response"]);
 }
