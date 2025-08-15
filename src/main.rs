@@ -1,5 +1,12 @@
-use serde::Serialize;
-use std::sync::mpsc;
+mod actor;
+mod message;
+mod prompt;
+
+use actor::PromptActor;
+use message::PromptMessage;
+use prompt::Prompt;
+
+use serde_json::Value;
 use tokio::sync::oneshot;
 
 #[tokio::main]
@@ -24,65 +31,9 @@ async fn main() {
     .unwrap();
 
     let result = reply_rx.await.unwrap();
-    println!("Response from actor: {}", result);
-}
 
-enum Message {
-    Increment,
-    GetCount(mpsc::Sender<u32>),
-}
+    let value: Value = serde_json::from_str(&result);
 
-struct Counter {
-    count: u32,
-}
-
-impl Counter {
-    fn run(&mut self, receiver: mpsc::Receiver<Message>) {
-        for msg in receiver {
-            match msg {
-                Message::Increment => {
-                    self.count += 1;
-                }
-                Message::GetCount(reply_to) => {
-                    let _ = reply_to.send(self.count);
-                }
-            }
-        }
-    }
-}
-
-struct PromptActor {
-    receiver: tokio::sync::mpsc::Receiver<PromptMessage>,
-}
-
-impl PromptActor {
-    fn new(receiver: tokio::sync::mpsc::Receiver<PromptMessage>) -> Self {
-        Self { receiver }
-    }
-
-    async fn run(mut self) {
-        while let Some(msg) = self.receiver.recv().await {
-            let PromptMessage { prompt, reply } = msg;
-
-            let prompt_json = serde_json::to_string(&prompt).unwrap_or_default();
-
-            let result = super::send_post(prompt_json)
-                .await
-                .unwrap_or_else(|_| "Error".to_string());
-
-            let _ = reply.send(result);
-        }
-    }
-}
-
-struct PromptMessage {
-    prompt: Prompt,
-    reply: oneshot::Sender<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct Prompt {
-    model: String,
-    prompt: String,
-    stream: bool,
+    //println!("Response from actor: {}", result);
+    println!("\n\nAI response: \n\n{}\n", value["response"]);
 }
