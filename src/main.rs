@@ -6,7 +6,6 @@ use actor::PromptActor;
 use message::PromptMessage;
 use prompt::Prompt;
 
-use serde_json::Value;
 use tokio::sync::oneshot;
 
 #[tokio::main]
@@ -37,11 +36,25 @@ async fn main() {
         return;
     }
 
+    // probably pull out into own function
     match reply_rx.await {
-        Ok(response) => {
-            let value: Value = serde_json::from_str(&response).expect("serde_json parse error");
-            println!("\n\nAI response: \n\n{}\n", value["response"])
-        }
+        Ok(response) => match serde_json::from_str::<serde_json::Value>(&response) {
+            Ok(value) => {
+                if let Some(reply) = value.get("response").and_then(|v| v.as_str()) {
+                    println!("\n\nAI response: \n\n{}\n", reply);
+                } else {
+                    eprintln!("JSON did not contain a valid 'response' field: {}", value);
+                }
+            }
+
+            Err(e) => {
+                eprintln!(
+                    "Failed to parse JSON from response: {}\nRaw response: {}",
+                    e, response
+                );
+            }
+        },
+
         Err(e) => eprintln!("Failed to receive response: {}", e),
     }
 }
